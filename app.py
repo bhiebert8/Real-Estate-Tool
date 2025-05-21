@@ -21,100 +21,130 @@ index_html = '''
 <html>
 <head>
     <title>Real Estate Investment Analysis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        label { font-weight: bold; }
-        small { color: gray; }
-        .section { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
+        small { color: #6c757d; }
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
     </style>
 </head>
 <body>
-    <h1>Initial Loan Information</h1>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">🏠 Real Estate Investment Analysis</h1>
     <form action="{{ url_for('analyze') }}" method="post">
         <div class="section">
-            <label>Home Cost:</label>
-            <input type="text" name="home_cost" required>
-            <br><small>Purchase price of the property (e.g., 350000).</small><br><br>
-
-            <label>Closing Cost:</label>
-            <input type="text" name="closing_cost" required>
-            <br><small>Initial closing cost in dollars (e.g., 5000).</small><br><br>
-
-            <label>Select Loan Type:</label>
-            <select name="loan_type_choice">
-                <option value="1">Conventional 30-year</option>
-                <option value="2">15-year</option>
-                <option value="3">Custom</option>
-            </select>
-            <br><small>Choose the term of your mortgage.</small><br><br>
-
-            <label>Custom Loan Term:</label>
-            <input type="text" name="custom_loan_term">
-            <br><small>Enter number of years if "Custom" was chosen.</small><br><br>
-
-            <label>Down Payment Percentage:</label>
-            <input type="text" name="down_payment_percent" required>
-            <br><small>Enter as a percentage (e.g., 20 for 20%).</small><br><br>
-
-            <label>Annual Appreciation Rate (%):</label>
-            <input type="text" name="annual_appreciation_percent" required>
-            <br><small>Expected yearly home value increase (e.g., 3).</small><br><br>
-
-            <label>Mortgage Interest Rate (%):</label>
-            <input type="text" name="mortgage_interest_rate" required>
-            <br><small>Current annual interest rate (e.g., 4).</small><br><br>
+            <h2 class="mb-3">Initial Loan Information</h2>
+            <div class="mb-3">
+                <label class="form-label">Home Cost</label>
+                <input type="number" class="form-control" name="home_cost" required>
+                <small>Purchase price of the property (e.g., 350000).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Closing Cost</label>
+                <input type="number" class="form-control" name="closing_cost" required>
+                <small>Initial closing cost in dollars (e.g., 5000).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Select Loan Type</label>
+                <select class="form-select" name="loan_type_choice">
+                    <option value="1">Conventional 30-year</option>
+                    <option value="2">15-year</option>
+                    <option value="3">Custom</option>
+                </select>
+                <small>Choose the term of your mortgage.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Custom Loan Term</label>
+                <input type="number" class="form-control" name="custom_loan_term">
+                <small>Enter number of years if "Custom" was chosen.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Down Payment Percentage</label>
+                <input type="number" class="form-control" name="down_payment_percent" required>
+                <small>Enter as a percentage (e.g., 20 for 20%).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Annual Appreciation Rate (%)</label>
+                <input type="number" class="form-control" name="annual_appreciation_percent" required>
+                <small>Expected yearly home value increase (e.g., 3).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Mortgage Interest Rate (%)</label>
+                <input type="number" class="form-control" name="mortgage_interest_rate" required>
+                <small>Current annual interest rate (e.g., 4).</small>
+            </div>
         </div>
 
         <div class="section">
-            <h2>Rental Income & Expenses</h2>
-            <label>Monthly Rent:</label>
-            <input type="text" name="monthly_rent" required>
-            <br><small>Expected rent income per month.</small><br><br>
-
-            <label>Rental Income Growth Rate (%):</label>
-            <input type="text" name="rental_income_growth_percent" required>
-            <br><small>Annual increase in rent income (e.g., 3).</small><br><br>
-
-            <label>Property Tax Input Mode:</label>
-            <input type="text" name="prop_tax_mode" required>
-            <br><small>Enter 'p' for percentage or 'd' for fixed dollar amount.</small><br><br>
-
-            <label>Property Tax Percentage:</label>
-            <input type="text" name="property_tax_percent">
-            <br><small>If mode is 'p', e.g., 1 for 1%.</small><br><br>
-
-            <label>Property Tax Amount:</label>
-            <input type="text" name="property_tax_amount">
-            <br><small>If mode is 'd', enter dollar amount.</small><br><br>
-
-            <label>Home Insurance Input Mode:</label>
-            <input type="text" name="ins_mode" required>
-            <br><small>Enter 'p' for percentage or 'd' for fixed amount.</small><br><br>
-
-            <label>Home Insurance Percentage:</label>
-            <input type="text" name="home_insurance_percent">
-            <br><small>If mode is 'p', e.g., 0.5 for 0.5%.</small><br><br>
-
-            <label>Home Insurance Amount:</label>
-            <input type="text" name="home_insurance_amount">
-            <br><small>If mode is 'd', enter dollar amount.</small><br><br>
+            <h2 class="mb-3">Rental Income & Expenses</h2>
+            <div class="mb-3">
+                <label class="form-label">Monthly Rent</label>
+                <input type="number" class="form-control" name="monthly_rent" required>
+                <small>Expected rent income per month.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Rental Income Growth Rate (%)</label>
+                <input type="number" class="form-control" name="rental_income_growth_percent" required>
+                <small>Annual increase in rent income (e.g., 3).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Input Mode</label>
+                <input type="text" class="form-control" name="prop_tax_mode" required>
+                <small>Enter 'p' for percentage or 'd' for fixed dollar amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Percentage</label>
+                <input type="number" class="form-control" name="property_tax_percent">
+                <small>If mode is 'p', e.g., 1 for 1%.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Amount</label>
+                <input type="number" class="form-control" name="property_tax_amount">
+                <small>If mode is 'd', enter dollar amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Input Mode</label>
+                <input type="text" class="form-control" name="ins_mode" required>
+                <small>Enter 'p' for percentage or 'd' for fixed amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Percentage</label>
+                <input type="number" class="form-control" name="home_insurance_percent">
+                <small>If mode is 'p', e.g., 0.5 for 0.5%.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Amount</label>
+                <input type="number" class="form-control" name="home_insurance_amount">
+                <small>If mode is 'd', enter dollar amount.</small>
+            </div>
         </div>
 
         <div class="section">
-            <h2>Property Details</h2>
-            <label>House Name:</label>
-            <input type="text" name="house_name" required>
-            <br><small>Nickname or identifier for the property.</small><br><br>
-
-            <label>Ownership Years:</label>
-            <input type="text" name="ownership_years" required>
-            <br><small>How many years you plan to own the property.</small><br><br>
-
-            <label>Selling Closing Cost Percentage:</label>
-            <input type="text" name="sell_closing_cost_percent" required>
-            <br><small>Closing cost when selling (e.g., 6 for 6%).</small><br><br>
+            <h2 class="mb-3">Property Details</h2>
+            <div class="mb-3">
+                <label class="form-label">House Name</label>
+                <input type="text" class="form-control" name="house_name" required>
+                <small>Nickname or identifier for the property.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ownership Years</label>
+                <input type="number" class="form-control" name="ownership_years" required>
+                <small>How many years you plan to own the property.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Selling Closing Cost Percentage</label>
+                <input type="number" class="form-control" name="sell_closing_cost_percent" required>
+                <small>Closing cost when selling (e.g., 6 for 6%).</small>
+            </div>
         </div>
-        <button type="submit">Analyze Initial Loan</button>
+        <div class="d-grid gap-2 col-6 mx-auto">
+            <button type="submit" class="btn btn-primary btn-lg my-4 shadow">Analyze Initial Loan</button>
+        </div>
     </form>
+</div>
 </body>
 </html>
 '''
@@ -125,22 +155,28 @@ results_html = '''
 <html>
 <head>
     <title>Investment Analysis Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        table, th, td { border: 1px solid #333; border-collapse: collapse; padding: 5px; }
-        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 5px; margin: 10px 0; }
-        small { color: gray; }
-        .section { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
+        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 5px; margin: 10px 0; border-radius: 8px; }
     </style>
 </head>
 <body>
-    <h1>Results for {{ results.house_name }}</h1>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">Results for {{ results.house_name }}</h1>
     <div class="section">
         <h2>Basic Loan Analysis</h2>
-        <p><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</p>
-        <p><strong>Loan Amount:</strong> {{ results.loan_amount }}</p>
-        <p><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</p>
-        <p><strong>Annualized Return:</strong> {{ results.annualized_return }}</p>
-        <p><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</p>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</li>
+            <li class="list-group-item"><strong>Loan Amount:</strong> {{ results.loan_amount }}</li>
+            <li class="list-group-item"><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</li>
+            <li class="list-group-item"><strong>Annualized Return:</strong> {{ results.annualized_return }}</li>
+            <li class="list-group-item"><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</li>
+        </ul>
     </div>
 
     <div class="section">
@@ -150,49 +186,56 @@ results_html = '''
 
     <div class="section">
         <h2>Wealth Accumulation Over Time</h2>
-        <img src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
+        <img class="img-fluid rounded shadow" src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
     </div>
 
     <div class="section">
         <h2>Optional: Refinance Simulation</h2>
-        <p style="font-size:small;">If you wish to simulate refinancing (to extract cash or obtain a better rate/timeline), please fill out the fields below. Your original loan info is passed along automatically.</p>
+        <p class="text-muted">If you wish to simulate refinancing (to extract cash or obtain a better rate/timeline), please fill out the fields below. Your original loan info is passed along automatically.</p>
         <form action="{{ url_for('simulate_refinance') }}" method="post">
-            <!-- Pass along original loan parameters as hidden fields -->
             {% for key, value in original_data.items() %}
                 <input type="hidden" name="{{ key }}" value="{{ value }}">
             {% endfor %}
-            <label>Refinance Type:</label>
-            <select name="refinance_type" required>
-                <option value="cashout">Cash-Out Refinance</option>
-                <option value="newrate">New Rate & Timeline (No Cash-Out)</option>
-            </select>
-            <br><small>Choose 'Cash-Out' to extract equity or 'New Rate' for better terms without cash.</small><br><br>
-
-            <label>Refinance Year:</label>
-            <input type="text" name="refinance_year" required>
-            <br><small>Year in which you plan to refinance (must be > 1).</small><br><br>
-
-            <label>Cost to Refinance (in dollars):</label>
-            <input type="text" name="refinance_cost" required>
-            <br><small>All fees associated with refinancing.</small><br><br>
-
-            <label>New Refinancing Annual Interest Rate (%):</label>
-            <input type="text" name="refinance_interest_rate" required>
-            <br><small>Enter the new interest rate you expect.</small><br><br>
-
-            <label>New Loan Term (years):</label>
-            <input type="text" name="custom_ref_loan_term" required>
-            <br><small>Length of the new loan term (e.g., 30 or 15).</small><br><br>
-
-            <button type="submit">Simulate Refinance</button>
+            <div class="mb-3">
+                <label class="form-label">Refinance Type</label>
+                <select class="form-select" name="refinance_type" required>
+                    <option value="cashout">Cash-Out Refinance</option>
+                    <option value="newrate">New Rate & Timeline (No Cash-Out)</option>
+                </select>
+                <small class="form-text text-muted">Choose 'Cash-Out' to extract equity or 'New Rate' for better terms without cash.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Refinance Year</label>
+                <input type="number" class="form-control" name="refinance_year" required>
+                <small class="form-text text-muted">Year in which you plan to refinance (must be &gt; 1).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Cost to Refinance (in dollars)</label>
+                <input type="number" class="form-control" name="refinance_cost" required>
+                <small class="form-text text-muted">All fees associated with refinancing.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">New Refinancing Annual Interest Rate (%)</label>
+                <input type="number" class="form-control" name="refinance_interest_rate" required>
+                <small class="form-text text-muted">Enter the new interest rate you expect.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">New Loan Term (years)</label>
+                <input type="number" class="form-control" name="custom_ref_loan_term" required>
+                <small class="form-text text-muted">Length of the new loan term (e.g., 30 or 15).</small>
+            </div>
+            <div class="d-grid gap-2 col-6 mx-auto">
+                <button type="submit" class="btn btn-success btn-lg my-3 shadow">Simulate Refinance</button>
+            </div>
         </form>
     </div>
-
-    <div class="section">
-        <a href="{{ url_for('download_excel') }}">Download Excel File of Analysis</a>
+    <div class="section text-center">
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('download_excel') }}">⬇️ Download Excel File of Analysis</a>
     </div>
-    <br>
-    <a href="{{ url_for('index') }}">Back to Input Form</a>
+    <div class="text-center my-4">
+        <a href="{{ url_for('index') }}" class="btn btn-link">⬅️ Back to Input Form</a>
+    </div>
+</div>
 </body>
 </html>
 '''
@@ -203,22 +246,29 @@ refinance_results_html = '''
 <html>
 <head>
     <title>Refinance Simulation Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        table, th, td { border: 1px solid #333; border-collapse: collapse; padding: 5px; }
-        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 5px; margin: 10px 0; }
-        small { color: gray; }
-        .section { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
+        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 8px; margin: 16px 0; border-radius: 8px; font-size: 1.1em; }
     </style>
 </head>
 <body>
-    <h1>Refinance Simulation Results for {{ results.house_name }}</h1>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">Refinance Simulation Results for {{ results.house_name }}</h1>
+
     <div class="section">
         <h2>Original Loan Analysis</h2>
-        <p><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</p>
-        <p><strong>Loan Amount:</strong> {{ results.loan_amount }}</p>
-        <p><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</p>
-        <p><strong>Annualized Return:</strong> {{ results.annualized_return }}</p>
-        <p><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</p>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</li>
+            <li class="list-group-item"><strong>Loan Amount:</strong> {{ results.loan_amount }}</li>
+            <li class="list-group-item"><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</li>
+            <li class="list-group-item"><strong>Annualized Return:</strong> {{ results.annualized_return }}</li>
+            <li class="list-group-item"><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</li>
+        </ul>
     </div>
 
     <div class="section">
@@ -228,12 +278,14 @@ refinance_results_html = '''
 
     <div class="section">
         <h2>Wealth Accumulation Over Time</h2>
-        <img src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
+        <img class="img-fluid rounded shadow" src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
     </div>
 
     <div class="section">
         <h2>Refinance Simulation Details</h2>
-        {{ refinance_details|safe }}
+        <div class="alert alert-info" role="alert">
+            {{ refinance_details|safe }}
+        </div>
         <h3>Pre-Refinance Cash Flow</h3>
         {{ pre_table|safe }}
         <div class="divider">--- Refinance Occurs Here ---</div>
@@ -241,11 +293,13 @@ refinance_results_html = '''
         {{ post_table|safe }}
     </div>
 
-    <div class="section">
-        <a href="{{ url_for('download_excel') }}">Download Excel File of Analysis</a>
+    <div class="section text-center">
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('download_excel') }}">⬇️ Download Excel File of Analysis</a>
     </div>
-    <br>
-    <a href="{{ url_for('index') }}">Back to Input Form</a>
+    <div class="text-center my-4">
+        <a href="{{ url_for('index') }}" class="btn btn-link">⬅️ Back to Input Form</a>
+    </div>
+</div>
 </body>
 </html>
 '''
