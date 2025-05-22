@@ -938,7 +938,944 @@ def generate_pdf_report(results, annual_table_html, refinance_details=None, pre_
     doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
     tmp.seek(0)
     return tmp.read()
+from flask import Flask, render_template_string, request, send_file, url_for
+import io
+import math
+import pandas as pd
+import matplotlib
 
+matplotlib.use('AGG')
+import matplotlib.pyplot as plt
+import base64
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+import tempfile
+
+app = Flask(__name__)
+excel_data = None
+last_results = None
+last_annual_table = None
+
+# ========= HTML Templates =========
+
+index_html = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real Estate Investment Analysis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        small { color: #6c757d; }
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
+        .remodel-section { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    </style>
+    <script>
+        function toggleRemodeling() {
+            const isRemodeling = document.getElementById('is_remodeling').value === 'yes';
+            document.getElementById('remodeling_details').style.display = isRemodeling ? 'block' : 'none';
+        }
+
+        function updateRemodelSections() {
+            const numRemodels = parseInt(document.getElementById('num_remodels').value);
+            for (let i = 1; i <= 3; i++) {
+                document.getElementById('remodel_' + i).style.display = i <= numRemodels ? 'block' : 'none';
+            }
+        }
+
+        window.onload = function() {
+            toggleRemodeling();
+            updateRemodelSections();
+        }
+    </script>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">🏠 Real Estate Investment Analysis</h1>
+    <div class="alert alert-warning"><strong>Note:</strong> This calculator is a simplified analysis and does not constitute tax, legal, or investment advice. For rental properties, it estimates U.S. depreciation and capital gains tax. Consult your accountant for actual filings!</div>
+    <form action="{{ url_for('analyze') }}" method="post">
+        <div class="section">
+            <h2 class="mb-3">Initial Loan Information</h2>
+            <div class="mb-3">
+                <label class="form-label">Home Cost</label>
+                <input type="number" class="form-control" name="home_cost" required>
+                <small>Purchase price of the property (e.g., 350000).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Closing Cost</label>
+                <input type="number" class="form-control" name="closing_cost" required>
+                <small>Initial closing cost in dollars (e.g., 5000).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Select Loan Type</label>
+                <select class="form-select" name="loan_type_choice">
+                    <option value="1">Conventional 30-year</option>
+                    <option value="2">15-year</option>
+                    <option value="3">Custom</option>
+                </select>
+                <small>Choose the term of your mortgage.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Custom Loan Term</label>
+                <input type="number" class="form-control" name="custom_loan_term">
+                <small>Enter number of years if "Custom" was chosen.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Down Payment Percentage</label>
+                <input type="number" class="form-control" name="down_payment_percent" required step="any">
+                <small>Enter as a percentage (e.g., 20 for 20%).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Annual Appreciation Rate (%)</label>
+                <input type="number" class="form-control" name="annual_appreciation_percent" required step="any">
+                <small>Expected yearly home value increase (e.g., 3).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Mortgage Interest Rate (%)</label>
+                <input type="number" class="form-control" name="mortgage_interest_rate" required step="any">
+                <small>Current annual interest rate (e.g., 4).</small>
+            </div>
+        </div>
+        <div class="section">
+            <h2 class="mb-3">Rental Income & Expenses</h2>
+            <div class="mb-3">
+                <label class="form-label">Monthly Rent</label>
+                <input type="number" class="form-control" name="monthly_rent" required>
+                <small>Expected rent income per month.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Rental Income Growth Rate (%)</label>
+                <input type="number" class="form-control" name="rental_income_growth_percent" required step="any">
+                <small>Annual increase in rent income (e.g., 3).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Vacancy Rate (%)</label>
+                <input type="number" class="form-control" name="vacancy_rate" required step="any">
+                <small>Expected average vacancy (e.g., 5).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Management Fee (%)</label>
+                <input type="number" class="form-control" name="management_fee_percent" step="any">
+                <small>Typical property management (e.g., 8). Enter 0 if self-managed.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">HOA Fees (Annual, $)</label>
+                <input type="number" class="form-control" name="hoa_fee" required>
+                <small>Enter $0 if none.</small>
+            </div>
+        </div>
+        <div class="section">
+            <h2 class="mb-3">Property Tax & Insurance</h2>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Input Mode</label>
+                <input type="text" class="form-control" name="prop_tax_mode" required>
+                <small>Enter 'p' for percentage or 'd' for fixed dollar amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Percentage</label>
+                <input type="number" class="form-control" name="property_tax_percent" step="any">
+                <small>If mode is 'p', e.g., 1 for 1%.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Amount</label>
+                <input type="number" class="form-control" name="property_tax_amount">
+                <small>If mode is 'd', enter dollar amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Property Tax Appraisal Growth (%)</label>
+                <input type="number" class="form-control" name="tax_appraisal_growth" required step="any">
+                <small>If you want property tax based on a different growth rate than market appreciation (e.g., capped appraisal increase), enter that here (e.g., 2).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Input Mode</label>
+                <input type="text" class="form-control" name="ins_mode" required>
+                <small>Enter 'p' for percentage or 'd' for fixed amount.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Percentage</label>
+                <input type="number" class="form-control" name="home_insurance_percent" step="any">
+                <small>If mode is 'p', e.g., 0.5 for 0.5%.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Home Insurance Amount</label>
+                <input type="number" class="form-control" name="home_insurance_amount">
+                <small>If mode is 'd', enter dollar amount.</small>
+            </div>
+        </div>
+        <div class="section">
+            <h2 class="mb-3">Property Details & Taxes</h2>
+            <div class="mb-3">
+                <label class="form-label">House Name</label>
+                <input type="text" class="form-control" name="house_name" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ownership Years</label>
+                <input type="number" class="form-control" name="ownership_years" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Selling Closing Cost Percentage</label>
+                <input type="number" class="form-control" name="sell_closing_cost_percent" required step="any">
+                <small>Closing cost when selling (e.g., 6 for 6%).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Is This a Rental Property?</label>
+                <select class="form-select" name="is_rental" required>
+                    <option value="yes">Yes</option>
+                    <option value="no">No (Primary Residence)</option>
+                </select>
+                <small>Impacts depreciation and capital gains tax.</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Structure Value Percentage (%)</label>
+                <input type="number" class="form-control" name="structure_percent" value="80">
+                <small>For depreciation (typically 75-80% of purchase price for residential).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Marginal Tax Rate (%)</label>
+                <input type="number" class="form-control" name="tax_rate" value="25">
+                <small>Federal + State (guess if unsure, for after-tax returns).</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Capital Gains Tax Rate (%)</label>
+                <input type="number" class="form-control" name="cap_gains_rate" value="20">
+                <small>Typical LTCG is 15-20%. Ignored if primary residence (with IRS exclusion).</small>
+            </div>
+        </div>
+        <div class="section">
+            <h2 class="mb-3">Remodeling Plans</h2>
+            <div class="mb-3">
+                <label class="form-label">Are You Planning to Remodel?</label>
+                <select class="form-select" name="is_remodeling" id="is_remodeling" onchange="toggleRemodeling()">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                </select>
+            </div>
+            <div id="remodeling_details" style="display: none;">
+                <div class="mb-3">
+                    <label class="form-label">Number of Remodels</label>
+                    <select class="form-select" name="num_remodels" id="num_remodels" onchange="updateRemodelSections()">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+
+                <!-- Remodel 1 -->
+                <div id="remodel_1" class="remodel-section">
+                    <h4>Remodel 1</h4>
+                    <div class="mb-3">
+                        <label class="form-label">Cost of Remodel ($)</label>
+                        <input type="number" class="form-control" name="remodel_cost_1" value="0">
+                        <small>Total cost of this remodel project.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value Added ($)</label>
+                        <input type="number" class="form-control" name="remodel_value_1" value="0">
+                        <small>Expected increase in property value from this remodel.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Remodel Year</label>
+                        <input type="number" class="form-control" name="remodel_year_1" value="1">
+                        <small>Year when remodel will occur (applied at beginning of year).</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Months Without Rent</label>
+                        <input type="number" class="form-control" name="remodel_months_1" value="0">
+                        <small>Number of months property will be vacant during remodel.</small>
+                    </div>
+                </div>
+
+                <!-- Remodel 2 -->
+                <div id="remodel_2" class="remodel-section" style="display: none;">
+                    <h4>Remodel 2</h4>
+                    <div class="mb-3">
+                        <label class="form-label">Cost of Remodel ($)</label>
+                        <input type="number" class="form-control" name="remodel_cost_2" value="0">
+                        <small>Total cost of this remodel project.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value Added ($)</label>
+                        <input type="number" class="form-control" name="remodel_value_2" value="0">
+                        <small>Expected increase in property value from this remodel.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Remodel Year</label>
+                        <input type="number" class="form-control" name="remodel_year_2" value="2">
+                        <small>Year when remodel will occur (applied at beginning of year).</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Months Without Rent</label>
+                        <input type="number" class="form-control" name="remodel_months_2" value="0">
+                        <small>Number of months property will be vacant during remodel.</small>
+                    </div>
+                </div>
+
+                <!-- Remodel 3 -->
+                <div id="remodel_3" class="remodel-section" style="display: none;">
+                    <h4>Remodel 3</h4>
+                    <div class="mb-3">
+                        <label class="form-label">Cost of Remodel ($)</label>
+                        <input type="number" class="form-control" name="remodel_cost_3" value="0">
+                        <small>Total cost of this remodel project.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value Added ($)</label>
+                        <input type="number" class="form-control" name="remodel_value_3" value="0">
+                        <small>Expected increase in property value from this remodel.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Remodel Year</label>
+                        <input type="number" class="form-control" name="remodel_year_3" value="3">
+                        <small>Year when remodel will occur (applied at beginning of year).</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Months Without Rent</label>
+                        <input type="number" class="form-control" name="remodel_months_3" value="0">
+                        <small>Number of months property will be vacant during remodel.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="d-grid gap-2 col-6 mx-auto">
+            <button type="submit" class="btn btn-primary btn-lg my-4 shadow">Analyze Initial Loan</button>
+        </div>
+    </form>
+</div>
+</body>
+</html>
+'''
+
+results_html = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Investment Analysis Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
+        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 8px; margin: 16px 0; border-radius: 8px; font-size: 1.1em; }
+        .remodel-info { background-color: #e3f2fd; padding: 12px; border-radius: 8px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">Results for {{ results.house_name }}</h1>
+    <div class="section">
+        <h2>Basic Loan Analysis</h2>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</li>
+            <li class="list-group-item"><strong>Loan Amount:</strong> {{ results.loan_amount }}</li>
+            <li class="list-group-item"><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</li>
+            <li class="list-group-item"><strong>Annualized Return:</strong> {{ results.annualized_return }}</li>
+            <li class="list-group-item"><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</li>
+            <li class="list-group-item"><strong>Capital Gains Tax (if Rental):</strong> {{ results.capital_gains_tax }}</li>
+            <li class="list-group-item"><strong>Final Value After Tax:</strong> {{ results.final_total_value }}</li>
+        </ul>
+        {% if results.remodel_summary %}
+        <div class="remodel-info">
+            <h5>Remodeling Summary</h5>
+            {{ results.remodel_summary|safe }}
+        </div>
+        {% endif %}
+    </div>
+    <div class="section">
+        <h2>Annual Summary</h2>
+        {{ annual_table|safe }}
+    </div>
+    <div class="section">
+        <h2>Wealth Accumulation Over Time</h2>
+        <img class="img-fluid rounded shadow" src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
+    </div>
+    <div class="section">
+        <h2>Optional: Refinance Simulation</h2>
+        <form action="{{ url_for('simulate_refinance') }}" method="post">
+            {% for key, value in original_data.items() %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endfor %}
+            <div class="mb-3">
+                <label class="form-label">Refinance Type</label>
+                <select class="form-select" name="refinance_type" required>
+                    <option value="cashout">Cash-Out Refinance</option>
+                    <option value="newrate">New Rate & Timeline (No Cash-Out)</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Refinance Year</label>
+                <input type="number" class="form-control" name="refinance_year" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Cost to Refinance ($)</label>
+                <input type="number" class="form-control" name="refinance_cost" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">New Interest Rate (%)</label>
+                <input type="number" class="form-control" name="refinance_interest_rate" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">New Loan Term (years)</label>
+                <input type="number" class="form-control" name="custom_ref_loan_term" required>
+            </div>
+            <div class="d-grid gap-2 col-6 mx-auto">
+                <button type="submit" class="btn btn-success btn-lg my-3 shadow">Simulate Refinance</button>
+            </div>
+        </form>
+    </div>
+    <div class="section text-center">
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('download_excel') }}">⬇️ Download Excel File of Analysis</a>
+        <a class="btn btn-outline-danger btn-lg" href="{{ url_for('download_pdf') }}">⬇️ Download PDF Summary</a>
+    </div>
+    <div class="text-center my-4">
+        <a href="{{ url_for('index') }}" class="btn btn-link">⬅️ Back to Input Form</a>
+    </div>
+</div>
+</body>
+</html>
+'''
+
+refinance_results_html = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Refinance Simulation Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #eef3ff; padding: 24px; margin-bottom: 28px; }
+        body { background: linear-gradient(90deg, #f7faff 0%, #e3f6fc 100%); }
+        h1 { color: #1769aa; font-weight: 800; }
+        .divider { background-color: #90EE90; text-align: center; font-weight: bold; padding: 8px; margin: 16px 0; border-radius: 8px; font-size: 1.1em; }
+        .remodel-info { background-color: #e3f2fd; padding: 12px; border-radius: 8px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="mb-4 text-center">Refinance Simulation Results for {{ results.house_name }}</h1>
+    <div class="section">
+        <h2>Original Loan Analysis</h2>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Initial Cash Outlay:</strong> {{ results.initial_cash_outlay }}</li>
+            <li class="list-group-item"><strong>Loan Amount:</strong> {{ results.loan_amount }}</li>
+            <li class="list-group-item"><strong>Monthly Mortgage Payment:</strong> {{ results.monthly_payment }}</li>
+            <li class="list-group-item"><strong>Annualized Return:</strong> {{ results.annualized_return }}</li>
+            <li class="list-group-item"><strong>Cumulative Return:</strong> {{ results.cumulative_return }}</li>
+            <li class="list-group-item"><strong>Capital Gains Tax (if Rental):</strong> {{ results.capital_gains_tax }}</li>
+            <li class="list-group-item"><strong>Final Value After Tax:</strong> {{ results.final_total_value }}</li>
+        </ul>
+        {% if results.remodel_summary %}
+        <div class="remodel-info">
+            <h5>Remodeling Summary</h5>
+            {{ results.remodel_summary|safe }}
+        </div>
+        {% endif %}
+    </div>
+    <div class="section">
+        <h2>Annual Summary</h2>
+        {{ annual_table|safe }}
+    </div>
+    <div class="section">
+        <h2>Wealth Accumulation Over Time</h2>
+        <img class="img-fluid rounded shadow" src="data:image/png;base64,{{ plot_url }}" alt="Wealth Accumulation Chart">
+    </div>
+    <div class="section">
+        <h2>Refinance Simulation Details</h2>
+        <div class="alert alert-info" role="alert">
+            {{ refinance_details|safe }}
+        </div>
+        <h3>Pre-Refinance Cash Flow</h3>
+        {{ pre_table|safe }}
+        <div class="divider">--- Refinance Occurs Here ---</div>
+        <h3>Post-Refinance Cash Flow</h3>
+        {{ post_table|safe }}
+    </div>
+    <div class="section text-center">
+        <a class="btn btn-outline-primary btn-lg" href="{{ url_for('download_excel') }}">⬇️ Download Excel File of Analysis</a>
+        <a class="btn btn-outline-danger btn-lg" href="{{ url_for('download_pdf') }}">⬇️ Download PDF Summary</a>
+    </div>
+    <div class="text-center my-4">
+        <a href="{{ url_for('index') }}" class="btn btn-link">⬅️ Back to Input Form</a>
+    </div>
+</div>
+</body>
+</html>
+'''
+
+
+# ---- Professional PDF Report Generator ----
+def generate_pdf_report(results, annual_table_html, refinance_details=None, pre_table=None, post_table=None,
+                        plot_url=None):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import inch, cm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (Paragraph, Frame, Image, Spacer, Table, TableStyle,
+                                    SimpleDocTemplate, PageBreak, KeepTogether, Flowable,
+                                    HRFlowable, PageTemplate, BaseDocTemplate)
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT, TA_JUSTIFY
+    from reportlab.platypus.tableofcontents import TableOfContents
+    import tempfile
+    import base64
+    from datetime import datetime
+    import pandas as pd
+
+    # Custom color scheme
+    PRIMARY_COLOR = colors.HexColor("#1769aa")
+    SECONDARY_COLOR = colors.HexColor("#ffc800")
+    ACCENT_COLOR = colors.HexColor("#2196F3")
+    DARK_COLOR = colors.HexColor("#212529")
+    LIGHT_BLUE = colors.HexColor("#E3F2FD")
+    LIGHT_GRAY = colors.HexColor("#F5F5F5")
+    SUCCESS_COLOR = colors.HexColor("#4CAF50")
+    WARNING_COLOR = colors.HexColor("#FF9800")
+
+    # Create document
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+
+    # Custom page template with header/footer
+    def add_header_footer(canvas, doc):
+        canvas.saveState()
+        # Header
+        canvas.setFillColor(PRIMARY_COLOR)
+        canvas.setFont("Helvetica-Bold", 10)
+        canvas.drawString(1 * inch, 10.5 * inch, results.get("house_name", "Property Analysis"))
+        canvas.setFont("Helvetica", 8)
+        canvas.drawRightString(7.5 * inch, 10.5 * inch, f"Generated: {datetime.now().strftime('%B %d, %Y')}")
+
+        # Header line
+        canvas.setStrokeColor(PRIMARY_COLOR)
+        canvas.setLineWidth(2)
+        canvas.line(1 * inch, 10.3 * inch, 7.5 * inch, 10.3 * inch)
+
+        # Footer
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.gray)
+        canvas.drawCentredString(4.25 * inch, 0.5 * inch, f"Page {doc.page}")
+        canvas.drawString(1 * inch, 0.5 * inch, "Confidential Investment Analysis")
+        canvas.drawRightString(7.5 * inch, 0.5 * inch, "Real Estate Investment Tool")
+        canvas.restoreState()
+
+    # Create document with custom page template
+    doc = SimpleDocTemplate(
+        tmp.name,
+        pagesize=letter,
+        topMargin=1.2 * inch,
+        bottomMargin=1 * inch,
+        leftMargin=1 * inch,
+        rightMargin=1 * inch
+    )
+
+    # Build story
+    story = []
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=32,
+        textColor=PRIMARY_COLOR,
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Heading2'],
+        fontSize=24,
+        textColor=SECONDARY_COLOR,
+        spaceAfter=20,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+
+    section_style = ParagraphStyle(
+        'SectionTitle',
+        parent=styles['Heading2'],
+        fontSize=18,
+        textColor=PRIMARY_COLOR,
+        spaceAfter=12,
+        spaceBefore=20,
+        fontName='Helvetica-Bold',
+        borderWidth=0,
+        borderPadding=0,
+        borderColor=PRIMARY_COLOR,
+        borderRadius=5
+    )
+
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['BodyText'],
+        fontSize=11,
+        leading=16,
+        alignment=TA_JUSTIFY,
+        spaceAfter=12
+    )
+
+    # ========== COVER PAGE ==========
+    story.append(Spacer(1, 2 * inch))
+    story.append(Paragraph("INVESTMENT ANALYSIS REPORT", title_style))
+    story.append(Spacer(1, 0.5 * inch))
+    story.append(Paragraph(results.get("house_name", ""), subtitle_style))
+    story.append(Spacer(1, 0.3 * inch))
+
+    # Executive metrics on cover
+    cover_data = [
+        ["Initial Investment", results.get("initial_cash_outlay", "")],
+        ["Projected Return", results.get("annualized_return", "")],
+        ["Total Value at Exit", results.get("final_total_value", "")]
+    ]
+    cover_table = Table(cover_data, colWidths=[2.5 * inch, 2.5 * inch])
+    cover_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 14),
+        ('TEXTCOLOR', (0, 0), (0, -1), PRIMARY_COLOR),
+        ('TEXTCOLOR', (1, 0), (1, -1), SUCCESS_COLOR),
+        ('LINEBELOW', (0, 0), (-1, -2), 1, colors.lightgrey),
+        ('TOPPADDING', (0, 0), (-1, -1), 15),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+    ]))
+    story.append(cover_table)
+
+    story.append(Spacer(1, 1 * inch))
+    story.append(Paragraph(f"Prepared on {datetime.now().strftime('%B %d, %Y')}",
+                           ParagraphStyle('DateStyle', parent=body_style, alignment=TA_CENTER, fontSize=12)))
+    story.append(PageBreak())
+
+    # ========== EXECUTIVE SUMMARY ==========
+    story.append(Paragraph("EXECUTIVE SUMMARY", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+
+    # Key metrics summary box
+    exec_summary_data = []
+
+    # Parse values for calculations
+    try:
+        initial_cash = float(results.get("initial_cash_outlay", "0").replace("$", "").replace(",", ""))
+        final_value = float(results.get("final_total_value", "0").replace("$", "").replace(",", ""))
+        profit = final_value - initial_cash
+
+        exec_summary_data = [
+            ["METRIC", "VALUE", "ANALYSIS"],
+            ["Initial Cash Required", results.get("initial_cash_outlay", ""), "Total upfront investment"],
+            ["Loan Amount", results.get("loan_amount", ""), "Mortgage principal"],
+            ["Monthly Payment", results.get("monthly_payment", ""), "P&I payment"],
+            ["Annualized Return", results.get("annualized_return", ""),
+             "Excellent" if float(results.get("annualized_return", "0%").replace("%", "")) > 10 else "Good"],
+            ["Total Return", results.get("cumulative_return", ""), f"Profit: ${profit:,.2f}"],
+            ["Final Portfolio Value", results.get("final_total_value", ""), "After all costs & taxes"]
+        ]
+    except:
+        exec_summary_data = [
+            ["METRIC", "VALUE", "NOTES"],
+            ["Initial Cash Required", results.get("initial_cash_outlay", ""), ""],
+            ["Loan Amount", results.get("loan_amount", ""), ""],
+            ["Monthly Payment", results.get("monthly_payment", ""), ""],
+            ["Annualized Return", results.get("annualized_return", ""), ""],
+            ["Total Return", results.get("cumulative_return", ""), ""],
+            ["Final Portfolio Value", results.get("final_total_value", ""), ""]
+        ]
+
+    exec_table = Table(exec_summary_data, colWidths=[2.2 * inch, 1.8 * inch, 2.5 * inch])
+    exec_table.setStyle(TableStyle([
+        # Header row
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        # Data rows
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+        ('TEXTCOLOR', (1, 1), (1, -1), SUCCESS_COLOR),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        # Styling
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_GRAY]),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    story.append(exec_table)
+
+    # Investment thesis
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(Paragraph("Investment Thesis", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+
+    try:
+        ann_return = float(results.get('annualized_return', '0%').replace('%', ''))
+        if ann_return >= 15:
+            thesis = "This investment presents an <b>exceptional opportunity</b> with projected returns significantly exceeding market averages. The combination of leverage, cash flow, and appreciation creates a compelling wealth-building vehicle."
+        elif ann_return >= 10:
+            thesis = "This property offers <b>strong returns</b> that outperform typical market investments. The risk-adjusted returns justify the capital commitment and management requirements."
+        elif ann_return >= 5:
+            thesis = "This investment provides <b>steady, reliable returns</b> suitable for conservative investors seeking stable cash flow and gradual wealth accumulation."
+        else:
+            thesis = "This property offers <b>modest returns</b> that may be suitable for risk-averse investors or those prioritizing stability over growth."
+    except:
+        thesis = "This real estate investment combines rental income, tax benefits, and appreciation potential to create long-term wealth."
+
+    story.append(Paragraph(thesis, body_style))
+
+    # Remodeling summary if applicable
+    if results.get("remodel_summary"):
+        story.append(Spacer(1, 0.2 * inch))
+        story.append(Paragraph("Remodeling Strategy", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+        # Parse the HTML-style remodel summary
+        remodel_text = results.get("remodel_summary", "").replace("<b>", "").replace("</b>", "").replace("<br>", "\n")
+        story.append(Paragraph(remodel_text.replace("\n", "<br/>"), body_style))
+
+    story.append(PageBreak())
+
+    # ========== REFINANCING OPPORTUNITIES ==========
+    story.append(Paragraph("STRATEGIC REFINANCING OPPORTUNITIES", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+
+    story.append(
+        Paragraph("Cash-Out Refinance Strategy", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+
+    refinance_text = """
+    As your property appreciates and the mortgage balance decreases, significant equity will accumulate, 
+    creating opportunities for strategic cash-out refinancing. This powerful wealth-building tool allows 
+    investors to access their equity without selling the property.
+    """
+    story.append(Paragraph(refinance_text, body_style))
+
+    story.append(Spacer(1, 0.2 * inch))
+
+    # Refinance options box
+    refi_options_data = [
+        ["INVESTOR OPTIONS AT REFINANCE", ""],
+        ["Option 1: Cash Return", "Receive your initial investment back tax-free while maintaining property ownership"],
+        ["Option 2: Portfolio Expansion", "Reinvest proceeds into additional properties to compound returns"],
+        ["Option 3: Hybrid Approach", "Take partial cash distribution and reinvest remainder"]
+    ]
+
+    refi_table = Table(refi_options_data, colWidths=[2 * inch, 4.5 * inch])
+    refi_table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), SECONDARY_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), DARK_COLOR),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('SPAN', (0, 0), (1, 0)),
+        # Options
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 1), (0, -1), PRIMARY_COLOR),
+        # Styling
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [LIGHT_BLUE, colors.white, LIGHT_BLUE]),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(refi_table)
+
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(
+        Paragraph("Our Deal Sourcing Advantage", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+
+    sourcing_text = """
+    <b>We specialize in sourcing the very best real estate investment opportunities.</b> Our team leverages:
+
+    • Extensive market relationships with brokers, wholesalers, and property owners
+    • Advanced analytics to identify undervalued properties with strong appreciation potential
+    • Rigorous due diligence process to minimize risk and maximize returns
+    • Off-market deal flow providing exclusive access to premium opportunities
+    • Strategic market timing to capitalize on optimal entry and exit points
+
+    When you're ready to expand your portfolio through refinancing proceeds, we'll present carefully 
+    vetted opportunities that meet our strict investment criteria, ensuring your capital is deployed 
+    into properties with the highest potential for success.
+    """
+    story.append(Paragraph(sourcing_text, body_style))
+
+    # Wealth accumulation chart (if available)
+    if plot_url:
+        story.append(PageBreak())
+        story.append(Paragraph("PROJECTED WEALTH ACCUMULATION", section_style))
+        story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+        try:
+            imgdata = base64.b64decode(plot_url)
+            tmpimg = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+            tmpimg.write(imgdata)
+            tmpimg.flush()
+            img = Image(tmpimg.name, width=6 * inch, height=3.5 * inch)
+            story.append(KeepTogether([img]))
+            story.append(Paragraph("<i>Chart shows total wealth accumulation including equity and cash flow</i>",
+                                   ParagraphStyle('Caption', parent=body_style, fontSize=9, textColor=colors.gray,
+                                                  alignment=TA_CENTER)))
+        except:
+            story.append(Paragraph("Chart unavailable", body_style))
+
+    story.append(PageBreak())
+
+    # ========== INVESTMENT METRICS & RATIOS ==========
+    story.append(Paragraph("KEY INVESTMENT METRICS", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+
+    # Calculate additional metrics if possible
+    try:
+        loan_amount = float(results.get("loan_amount", "0").replace("$", "").replace(",", ""))
+        initial_cash = float(results.get("initial_cash_outlay", "0").replace("$", "").replace(",", ""))
+        monthly_payment = float(results.get("monthly_payment", "0").replace("$", "").replace(",", ""))
+
+        # Try to get first year rent from annual table
+        annual_df = pd.read_html(annual_table_html)[0]
+        first_year_rent = annual_df.iloc[0]["Annual Rent Income"]
+        first_year_rent_val = float(first_year_rent.replace("$", "").replace(",", ""))
+
+        # Calculate metrics
+        total_investment = loan_amount + initial_cash
+        leverage_ratio = loan_amount / total_investment
+        debt_service = monthly_payment * 12
+        dscr = first_year_rent_val / debt_service if debt_service > 0 else 0
+
+        metrics_data = [
+            ["FINANCIAL METRICS", "VALUE", "BENCHMARK", "STATUS"],
+            ["Leverage Ratio", f"{leverage_ratio * 100:.1f}%", "60-80%", "✓" if 0.6 <= leverage_ratio <= 0.8 else "!"],
+            ["Debt Service Coverage", f"{dscr:.2f}x", ">1.25x", "✓" if dscr > 1.25 else "!"],
+            ["Cash-on-Cash Return", "Calculated", ">8%", "—"],
+            ["Cap Rate", "Market-based", "4-10%", "—"]
+        ]
+    except:
+        metrics_data = [
+            ["FINANCIAL METRICS", "VALUE", "BENCHMARK", "STATUS"],
+            ["Leverage Ratio", "—", "60-80%", "—"],
+            ["Debt Service Coverage", "—", ">1.25x", "—"],
+            ["Cash-on-Cash Return", "—", ">8%", "—"],
+            ["Cap Rate", "—", "4-10%", "—"]
+        ]
+
+    metrics_table = Table(metrics_data, colWidths=[2.5 * inch, 1.5 * inch, 1.5 * inch, 1 * inch])
+    metrics_table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), ACCENT_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        # Data
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_BLUE]),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    story.append(metrics_table)
+
+    # ========== RISK ANALYSIS ==========
+    story.append(Spacer(1, 0.4 * inch))
+    story.append(Paragraph("RISK ASSESSMENT", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+
+    risk_data = [
+        ["RISK FACTOR", "IMPACT", "MITIGATION STRATEGY"],
+        ["Market Downturn", "Medium", "Conservative appreciation assumptions, strong cash flow buffer"],
+        ["Vacancy Risk", "Low-Med", "Competitive pricing, property maintenance, tenant screening"],
+        ["Interest Rate Risk", "Medium", "Fixed-rate mortgage, refinancing options available"],
+        ["Maintenance Surprises", "Low", "Annual reserves, regular inspections, warranty coverage"],
+        ["Regulatory Changes", "Low", "Stay informed on local regulations, professional management"]
+    ]
+
+    risk_table = Table(risk_data, colWidths=[2.2 * inch, 1.3 * inch, 3 * inch])
+    risk_table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), WARNING_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        # Risk factors column
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        # Impact column colors
+        ('TEXTCOLOR', (1, 1), (1, 1), WARNING_COLOR),  # Medium
+        ('TEXTCOLOR', (1, 2), (1, 2), SECONDARY_COLOR),  # Low-Med
+        ('TEXTCOLOR', (1, 3), (1, 3), WARNING_COLOR),  # Medium
+        ('TEXTCOLOR', (1, 4), (1, 4), SUCCESS_COLOR),  # Low
+        ('TEXTCOLOR', (1, 5), (1, 5), SUCCESS_COLOR),  # Low
+        ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+        ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+        # Grid and styling
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_GRAY]),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(risk_table)
+
+    story.append(PageBreak())
+
+    # ========== EXIT STRATEGY ==========
+    story.append(Paragraph("EXIT STRATEGY & RETURNS", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+
+    story.append(Paragraph("Disposition Analysis", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+
+    exit_text = f"""
+    This analysis assumes a {results.get('ownership_years', 'N/A')}-year holding period with the following exit assumptions:
+
+    • Property appreciation continues at the modeled rate
+    • Selling costs of approximately 6-7% of sale price
+    • Capital gains tax treatment for investment properties
+    • All deferred maintenance addressed prior to sale
+    """
+    story.append(Paragraph(exit_text, body_style))
+
+    # Capital gains summary if rental
+    if results.get("capital_gains_tax", "N/A") != "N/A":
+        story.append(Spacer(1, 0.2 * inch))
+        story.append(Paragraph("Tax Implications", ParagraphStyle('SubSection', parent=section_style, fontSize=14)))
+        cap_gains_text = f"""
+        As a rental property, this investment will be subject to capital gains tax upon sale. 
+        The estimated tax liability is {results.get('capital_gains_tax', 'N/A')}, which has been 
+        factored into the final return calculations. Consider 1031 exchange options to defer taxes.
+        """
+        story.append(Paragraph(cap_gains_text, body_style))
+
+    # ========== APPENDIX (if refinance) ==========
+    if refinance_details:
+        story.append(PageBreak())
+        story.append(Paragraph("REFINANCE ANALYSIS", section_style))
+        story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
+        story.append(Paragraph(refinance_details.replace("<br>", "<br/>"), body_style))
+
+    # ========== DISCLAIMER ==========
+    story.append(PageBreak())
+    story.append(Paragraph("IMPORTANT DISCLAIMERS", section_style))
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.red, spaceAfter=12))
+
+    disclaimer_text = """
+    <b>Investment Risk:</b> Real estate investments carry inherent risks including but not limited to market volatility, 
+    economic downturns, natural disasters, and regulatory changes. Past performance does not guarantee future results.
+
+    <b>Tax Advice:</b> This analysis provides estimates only. Consult with a qualified tax professional for advice 
+    specific to your situation. Tax laws and regulations are subject to change.
+
+    <b>Financial Projections:</b> All projections are based on assumptions that may not materialize. Actual results 
+    may vary significantly from these projections.
+
+    <b>Professional Advice:</b> This tool is for educational purposes only and does not constitute financial, legal, 
+    or tax advice. Always consult with qualified professionals before making investment decisions.
+    """
+
+    story.append(
+        Paragraph(disclaimer_text, ParagraphStyle('Disclaimer', parent=body_style, fontSize=9, textColor=colors.gray)))
+
+    # Build PDF
+    doc
 
 # ========== Main Loan/Analysis Logic with Remodeling ==========
 def parse_remodeling_data(form):
