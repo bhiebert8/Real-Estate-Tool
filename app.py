@@ -2530,4 +2530,4 @@ if __name__ == '__main__':
     else:
         print("✅ Rentcast API key configured - market data enabled!")
 
-    app.run(debug=True, port=5002)
+    app.run(debug=True, port=5003)
