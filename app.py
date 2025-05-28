@@ -1,21 +1,10 @@
-from flask import Flask, render_template_string, request, send_file, url_for, session, redirect
-import io
-import math
-import pandas as pd
+from flask import Flask
 import matplotlib
 
 matplotlib.use('AGG')
-import matplotlib.pyplot as plt
-import base64
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
-import tempfile
-import requests
-import json
 
-from HTML_TEMPLATES import *
-from PDF_Report_Generator import generate_pdf_report
+from FlaskProject.HTML_TEMPLATES import *
+from FlaskProject.PDF_Report_Generator import generate_pdf_report
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_secret_key_5397'  # Change this to a secure secret key
@@ -1318,19 +1307,13 @@ def run_refinance_simulation(form):
 
 from flask import Flask, render_template_string, request, send_file, url_for, session, redirect
 import io
-import math
 import pandas as pd
 import matplotlib
 
 matplotlib.use('AGG')
 import matplotlib.pyplot as plt
 import base64
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
-import tempfile
 import requests
-import json
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_secret_key_5397'  # Change this to a secure secret key
