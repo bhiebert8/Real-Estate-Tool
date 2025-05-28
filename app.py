@@ -3,8 +3,8 @@ import matplotlib
 
 matplotlib.use('AGG')
 
-from FlaskProject.HTML_TEMPLATES import *
-from FlaskProject.PDF_Report_Generator import generate_pdf_report
+from HTML_TEMPLATES import *
+from PDF_Report_Generator import generate_pdf_report
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_secret_key_5397'  # Change this to a secure secret key
